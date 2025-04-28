@@ -8,6 +8,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
@@ -17,11 +20,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.example.lab6.ui.theme.Lab6Theme
-import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.FirebaseFirestore
 
 class CourseDetailsActivity : ComponentActivity() {
@@ -33,129 +37,301 @@ class CourseDetailsActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    // Danh sách khóa học được lưu trữ trong state để cập nhật giao diện khi dữ liệu thay đổi
-                    val courseList = remember { mutableStateListOf<Course?>() }
+                    val courseList = remember { mutableStateListOf<Course>() }
                     val context = LocalContext.current
 
-                    // Gọi Firestore để lấy dữ liệu khi Composable này được tạo
                     LaunchedEffect(Unit) {
                         fetchCoursesFromFirebase(courseList, context)
                     }
 
-                    // Hiển thị danh sách khóa học từ Firebase
-                    firebaseUI(context, courseList)
+                    FirebaseUI(context, courseList)
                 }
             }
         }
     }
 }
 
-// Hàm lấy danh sách khóa học từ Firestore
-fun fetchCoursesFromFirebase(courseList: SnapshotStateList<Course?>, context: android.content.Context) {
-    val db: FirebaseFirestore = FirebaseFirestore.getInstance()
-
-    db.collection("Courses").get()
-        .addOnSuccessListener { queryDocumentSnapshots ->
-            if (!queryDocumentSnapshots.isEmpty) {
-                courseList.clear() // Xóa danh sách cũ trước khi cập nhật dữ liệu mới
-                for (document in queryDocumentSnapshots.documents) {
-                    val course: Course? = document.toObject(Course::class.java)
-                    courseList.add(course) // Thêm từng khóa học vào danh sách
-                }
-            } else {
-                Toast.makeText(context, "Không có dữ liệu trong cơ sở dữ liệu", Toast.LENGTH_SHORT).show()
-            }
-        }
-        .addOnFailureListener {
-            Toast.makeText(context, "Lấy dữ liệu thất bại.", Toast.LENGTH_SHORT).show()
-        }
-}
-
-// Composable hiển thị danh sách khóa học
 @Composable
-fun firebaseUI(context: android.content.Context, courseList: SnapshotStateList<Course?>) {
+fun FirebaseUI(context: android.content.Context, courseList: SnapshotStateList<Course>) {
+    var showEditDialog by remember { mutableStateOf(false) }
+    var selectedCourse by remember { mutableStateOf(Course()) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White), // Đặt màu nền trắng
-        verticalArrangement = Arrangement.Top, // Căn trên cùng
-        horizontalAlignment = Alignment.CenterHorizontally // Căn giữa theo chiều ngang
+            .background(Color.White),
+        verticalArrangement = Arrangement.Top,
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Sử dụng LazyColumn để hiển thị danh sách khóa học
         LazyColumn {
             itemsIndexed(courseList) { index, item ->
-                CourseCard(context, item) // Hiển thị từng khóa học
+                CourseCard(
+                    context = context,
+                    course = item,
+                    onEditClick = { course ->
+                        selectedCourse = course
+                        showEditDialog = true
+                    },
+                    onDeleteClick = { course ->
+                        deleteCourseFromFirebase(course, context, courseList)
+                    }
+                )
             }
         }
     }
+
+    if (showEditDialog) {
+        EditCourseDialog(
+            course = selectedCourse,
+            onDismiss = { showEditDialog = false },
+            onConfirm = { updatedCourse ->
+                updateCourseInFirebase(updatedCourse, context, courseList)
+                showEditDialog = false
+            }
+        )
+    }
 }
 
-// Composable hiển thị thông tin của một khóa học dưới dạng Card
 @Composable
-fun CourseCard(context: android.content.Context, course: Course?) {
+fun CourseCard(
+    context: android.content.Context,
+    course: Course,
+    onEditClick: (Course) -> Unit,
+    onDeleteClick: (Course) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
     Card(
-        onClick = {
-            // Hiển thị thông báo khi người dùng nhấn vào khóa học
-            Toast.makeText(context, "${course?.courseName} được chọn.", Toast.LENGTH_SHORT).show()
-        },
+        onClick = { expanded = !expanded },
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp), // Thêm padding để dễ nhìn hơn
-        elevation = CardDefaults.cardElevation(6.dp) // Đổ bóng cho Card
+            .padding(8.dp),
+        elevation = CardDefaults.cardElevation(6.dp)
     ) {
         Column(
-            modifier = Modifier.padding(8.dp) // Khoảng cách giữa nội dung và viền Card
+            modifier = Modifier.padding(16.dp)
         ) {
-            // Hiển thị tên khóa học nếu có
-            course?.courseName?.let {
-                Text(
-                    text = it,
-                    modifier = Modifier.padding(4.dp),
-                    color = Color.Blue,
-                    textAlign = TextAlign.Center,
-                    style = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                )
-            }
+            Text(
+                text = course.courseName ?: "",
+                modifier = Modifier.padding(bottom = 8.dp),
+                color = Color.Blue,
+                textAlign = TextAlign.Center,
+                style = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            )
 
-            // Hiển thị thời gian khóa học nếu có
-            course?.courseDuration?.let {
-                Text(
-                    text = it,
-                    modifier = Modifier.padding(4.dp),
-                    color = Color.Black,
-                    textAlign = TextAlign.Center,
-                    style = TextStyle(fontSize = 15.sp)
-                )
-            }
+            Text(
+                text = course.courseDuration ?: "",
+                modifier = Modifier.padding(bottom = 8.dp),
+                color = Color.Black,
+                style = TextStyle(fontSize = 15.sp)
+            )
 
-            // Hiển thị mô tả khóa học nếu có
-            course?.courseDescription?.let {
-                Text(
-                    text = it,
-                    modifier = Modifier.padding(4.dp),
-                    color = Color.Black,
-                    textAlign = TextAlign.Center,
-                    style = TextStyle(fontSize = 15.sp)
-                )
+            Text(
+                text = course.courseDescription ?: "",
+                color = Color.Black,
+                style = TextStyle(fontSize = 15.sp)
+            )
+
+            if (expanded) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    IconButton(
+                        onClick = { onEditClick(course) },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit",
+                            tint = Color.Blue
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { onDeleteClick(course) },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = Color.Red
+                        )
+                    }
+                }
             }
         }
     }
 }
 
-// Hàm thêm khóa học vào Firestore
-fun addDataToFirebase(courseName: String, courseDuration: String, courseDescription: String, context: android.content.Context) {
-    val db: FirebaseFirestore = FirebaseFirestore.getInstance()
-    val dbCourses: CollectionReference = db.collection("Courses")
+@Composable
+fun EditCourseDialog(
+    course: Course,
+    onDismiss: () -> Unit,
+    onConfirm: (Course) -> Unit
+) {
+    var courseName by remember { mutableStateOf(course.courseName ?: "") }
+    var courseDuration by remember { mutableStateOf(course.courseDuration ?: "") }
+    var courseDescription by remember { mutableStateOf(course.courseDescription ?: "") }
 
-    // Tạo một đối tượng khóa học mới
-    val course = Course(courseName, courseDescription, courseDuration)
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            elevation = CardDefaults.cardElevation(8.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Text(
+                    text = "Chỉnh sửa khóa học",
+                    style = TextStyle(
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
 
-    // Thêm khóa học vào Firestore
-    dbCourses.add(course)
+                OutlinedTextField(
+                    value = courseName,
+                    onValueChange = { courseName = it },
+                    label = { Text("Tên khóa học") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = courseDuration,
+                    onValueChange = { courseDuration = it },
+                    label = { Text("Thời lượng") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = courseDescription,
+                    onValueChange = { courseDescription = it },
+                    label = { Text("Mô tả") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                    maxLines = 3
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Hủy")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(onClick = {
+                        onConfirm(
+                            Course(
+                                id = course.id,
+                                courseName = courseName,
+                                courseDuration = courseDuration,
+                                courseDescription = courseDescription
+                            )
+                        )
+                    }) {
+                        Text("Lưu")
+                    }
+                }
+            }
+        }
+    }
+}
+
+fun fetchCoursesFromFirebase(courseList: SnapshotStateList<Course>, context: android.content.Context) {
+    val db = FirebaseFirestore.getInstance()
+
+    db.collection("Courses").get()
+        .addOnSuccessListener { querySnapshot ->
+            courseList.clear()
+            for (document in querySnapshot.documents) {
+                val course = document.toObject(Course::class.java)?.copy(id = document.id)
+                if (course != null) {
+                    courseList.add(course)
+                }
+            }
+        }
+        .addOnFailureListener {
+            Toast.makeText(context, "Lấy dữ liệu thất bại", Toast.LENGTH_SHORT).show()
+        }
+}
+
+fun updateCourseInFirebase(
+    course: Course,
+    context: android.content.Context,
+    courseList: SnapshotStateList<Course>
+) {
+    if (course.id.isEmpty()) return
+
+    val db = FirebaseFirestore.getInstance()
+
+    db.collection("Courses").document(course.id)
+        .set(course)
         .addOnSuccessListener {
-            Toast.makeText(context, "Thêm khóa học thành công", Toast.LENGTH_SHORT).show()
+            val index = courseList.indexOfFirst { it.id == course.id }
+            if (index != -1) {
+                courseList[index] = course
+            }
+            Toast.makeText(context, "Cập nhật thành công", Toast.LENGTH_SHORT).show()
         }
         .addOnFailureListener { e ->
-            Toast.makeText(context, "Thêm khóa học thất bại\n$e", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Cập nhật thất bại: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+}
+
+fun deleteCourseFromFirebase(
+    course: Course,
+    context: android.content.Context,
+    courseList: SnapshotStateList<Course>
+) {
+    if (course.id.isEmpty()) return
+
+    val db = FirebaseFirestore.getInstance()
+
+    db.collection("Courses").document(course.id)
+        .delete()
+        .addOnSuccessListener {
+            courseList.remove(course)
+            Toast.makeText(context, "Xóa thành công", Toast.LENGTH_SHORT).show()
+        }
+        .addOnFailureListener { e ->
+            Toast.makeText(context, "Xóa thất bại: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+}
+
+fun addDataToFirebase(
+    courseName: String,
+    courseDuration: String,
+    courseDescription: String,
+    context: android.content.Context
+) {
+    val db = FirebaseFirestore.getInstance()
+    val course = Course(
+        courseName = courseName,
+        courseDuration = courseDuration,
+        courseDescription = courseDescription
+    )
+
+    db.collection("Courses")
+        .add(course)
+        .addOnSuccessListener { documentReference ->
+            Toast.makeText(context, "Thêm thành công", Toast.LENGTH_SHORT).show()
+        }
+        .addOnFailureListener { e ->
+            Toast.makeText(context, "Thêm thất bại: ${e.message}", Toast.LENGTH_SHORT).show()
         }
 }

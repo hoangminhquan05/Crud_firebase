@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "225248897561",
-    "project_id": "lab6-fc3fd",
-    "storage_bucket": "lab6-fc3fd.firebasestorage.app"
+    "project_number": "762463049463",
+    "project_id": "lab-crud-7e718",
+    "storage_bucket": "lab-crud-7e718.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:225248897561:android:4165226fb5b007031bd888",
+        "mobilesdk_app_id": "1:762463049463:android:1f024043990a79a2cb25f2",
         "android_client_info": {
           "package_name": "com.example.lab6"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBDYwpMbsj-SZEHZFhfeKNokUnzWPfgyMM"
+          "current_key": "AIzaSyAHOroXR4J4cIH3V-CodyfdE01klIUl5pc"
         }
       ],
       "services": {
